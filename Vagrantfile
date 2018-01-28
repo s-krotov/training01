@@ -42,7 +42,7 @@ Vagrant.configure("2") do |config|
     node.vm.provision "shell", inline: <<-SHELL
       yum install git -y
       git clone https://github.com/s-krotov/module2.git
-
+      git checkout task2
       cat module2/README.md
     SHELL
   end
