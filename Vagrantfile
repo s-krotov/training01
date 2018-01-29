@@ -35,22 +35,32 @@ Vagrant.configure("2") do |config|
     vb.memory = "512"
   end
 
-  config.vm.define :master do |node|
+  ssh_pub_key = File.readlines("id_rsa.pub").first.strip
+  config.vm.provision "file", source: "./id_rsa", destination: "~/.ssh/id_rsa"
+  config.vm.provision 'shell', inline: 'mkdir -p /root/.ssh'
+  config.vm.provision 'shell', inline: "echo #{ssh_pub_key} >> /root/.ssh/authorized_keys"
+  config.vm.provision 'shell', inline: "echo #{ssh_pub_key} >> /home/vagrant/.ssh/authorized_keys", privileged: false
+
+
+  config.vm.define :vm1 do |node|
     node.vm.hostname = "vm1"
     node.vm.network :private_network, :ip => '192.168.56.56'
-    node.vm.provision :hosts, :sync_hosts => true
     node.vm.provision "shell", inline: <<-SHELL
       yum install git -y
-      git clone https://github.com/s-krotov/module2.git
-      cd module2; git checkout task2
+      git clone https://github.com/s-krotov/module2.git -b task2
       cat module2/README.md
+      chmod 0600 .ssh/id_rsa
+      grep -qF "192.168.56.66 vm2" "/etc/hosts" || echo "192.168.56.66 slave vm2" >> "/etc/hosts"
     SHELL
   end
 
-  config.vm.define :slave do |node|
+  config.vm.define :vm2 do |node|
     node.vm.hostname = "vm2"
     node.vm.network :private_network, :ip => '192.168.56.66'
-    node.vm.provision :hosts, :sync_hosts => true
+    node.vm.provision "shell", inline: <<-SHELL
+      chmod 0600 .ssh/id_rsa
+      grep -qF "192.168.56.56 vm1" "/etc/hosts" || echo "192.168.56.56 master vm1" >> "/etc/hosts"
+    SHELL
   end
 
 end
