@@ -1,23 +1,28 @@
 plugins {
-    id 'war'
+  id 'war'
 }
 
 dependencies {
-    compile group: 'log4j', name: 'log4j', version: '1.2.17', ext: 'jar'
-    compile group: 'commons-io', name: 'commons-io', version: '2.5' 
+  compile group: 'log4j', name: 'log4j', version: '1.2.17', ext: 'jar'
+  compile group: 'commons-io', name: 'commons-io', version: '2.5'
 }
 
 repositories {
-    mavenCentral()
+  mavenCentral()
 }
 
-version='7.8.8'
-
-task version_i << {
+task version_grow {
+  Properties props = new Properties();
+  File propsFile = new File('gradle.properties');
+  props.load(propsFile.newDataInputStream());
+  def version = props.getProperty('version');
   def index = version.lastIndexOf(".");
-  def major = version.substring(0,index);
-  def minor = version.substring(index+1);
-  println(major+" : "+minor)
-  // String s=buildFile.getText().replaceFirst("version='$version'","version='updatedVersion'")
-  // buildFile.setText(s)
+  def branch = version.substring(0,index);
+  def build = version.substring(index+1);
+  int newbuild=build.toInteger()+1;
+  println("New version:\t"+branch+"."+newbuild);
+  def newversion = branch+"."+newbuild;
+  props.setProperty('version',newversion.toString());
+  props.store(propsFile.newWriter(), null);
+  //props.load(propsFile.newDataInputStream());
 }
