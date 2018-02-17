@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
+  <metadata>
+    <id>MusicStore</id>
+    <version>1</version>
+    <authors>MusicStore</authors>
+    <owners>MusicStore</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <licenseUrl>http://www.example.com</licenseUrl>
+    <projectUrl>http://www.example.com</projectUrl>
+    <description>test</description>
+    <releaseNotes></releaseNotes>
+  </metadata>
+</package>
