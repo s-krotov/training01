@@ -11,7 +11,7 @@ repositories {
   mavenCentral()
 }
 
-task version_grow {
+task version_grow << {
   Properties props = new Properties();
   File propsFile = new File('gradle.properties');
   props.load(propsFile.newDataInputStream());
@@ -26,3 +26,18 @@ task version_grow {
   props.store(propsFile.newWriter(), null);
   //props.load(propsFile.newDataInputStream());
 }
+
+task sourcesForRelease(type: Copy) {
+    from 'src/main/resources'
+    into 'build/resources/main'
+    doLast {
+        Properties props = new Properties();
+        File propsFile = new File('gradle.properties');
+        props.load(propsFile.newDataInputStream());
+        def version = props.getProperty('version');
+        def outputFile = file("$buildDir/resources/main/greeting.txt")
+        outputFile.write "Version:'"+version+"'"
+    }    
+}
+
+classes.dependsOn sourcesForRelease

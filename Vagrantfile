@@ -33,6 +33,22 @@ lb_script = <<SCRIPT
   wget -O /etc/yum.repos.d/jenkins.repo http://pkg.jenkins-ci.org/redhat/jenkins.repo
   rpm --import https://jenkins-ci.org/redhat/jenkins-ci.org.key
   yum install jenkins -y
+  systemctl enable jenkins.service
+  systemctl start jenkins.service
+
+  mkdir /app && cd /app
+  wget -c -N -q https://sonatype-download.global.ssl.fastly.net/nexus/oss/nexus-2.14.7-01-bundle.tar.gz
+  tar xvf nexus-2.14.7-01-bundle.tar.gz -C /app
+  ln -s /app/nexus-2.14.7-01/ /app/nexus
+  adduser nexus
+  chown -R nexus:nexus /app/nexus-2.14.7-01
+  chown -R nexus:nexus /app/sonatype-work
+  export NEXUS_HOME=/app/nexus 
+  echo 'RUN_AS_USER="nexus"' > /app/nexus/bin/nexus
+  ln -s /opt/nexus/bin/nexus /etc/init.d/nexus
+  systemctl enable nexus
+  systemctl start nexus
+  #8081/nexus
   
   cp /vagrant/mod_jk.so /etc/httpd/modules/
   cp /vagrant/lb.conf /etc/httpd/conf.d/
@@ -43,6 +59,7 @@ lb_script = <<SCRIPT
   
   systemctl enable httpd
   systemctl start httpd
+  systemctl restart httpd
   
   systemctl enable jenkins
   systemctl start jenkins
@@ -74,8 +91,9 @@ Vagrant.configure("2") do |config|
   config.vm.define LB_HOSTNAME do |node|
     node.vm.hostname = LB_HOSTNAME
     node.vm.network :private_network, ip: "192.168.56.10", name: "VirtualBox Host-Only Ethernet Adapter" #name parameter is due https://github.com/hashicorp/vagrant/issues/6059#issuecomment-126834560
-    node.vm.network "forwarded_port", guest: 80, host: 8008
+    node.vm.network "forwarded_port", guest: 80, host: 8000
     node.vm.network "forwarded_port", guest: 8080, host: 8080
+    node.vm.network "forwarded_port", guest: 8081, host: 8081
     node.vm.provision :shell, :inline => lb_script
   end
 end
