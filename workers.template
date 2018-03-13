@@ -1,2 +1,0 @@
-worker.list=lb
-worker.lb.type=lb
