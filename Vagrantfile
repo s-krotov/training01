@@ -1,99 +1,84 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
-
-VM_COUNT = 3
-LB_HOSTNAME = 'lb'
-
-node_script = <<SCRIPT
-  #!/bin/bash
-  #install 
-  yum install java-1.8.0-openjdk tomcat tomcat-webapps tomcat-admin-webapps -y
-  
-  #create sample data
-  mkdir /usr/share/tomcat/webapps/test
-  echo "<h1>i am ${1}</h1>" > /usr/share/tomcat/webapps/test/index.html
-  
-  echo "worker.lb.balance_workers=${1}" > /vagrant/worker_${1}.tmp
-  echo "worker.${1}.host=${2}" >> /vagrant/worker_${1}.tmp
-  echo "worker.${1}.port=8009" >> /vagrant/worker_${1}.tmp
-  echo "worker.${1}.type=ajp13" >> /vagrant/worker_${1}.tmp
-  
-  #starting node services
-  systemctl enable tomcat
-  systemctl start tomcat
-  
-  #TODO firewall setup vs disable
-  systemctl stop firewalld
-  systemctl disable firewalld
-SCRIPT
-
-lb_script = <<SCRIPT
-  #!/bin/bash
-  yum install httpd java-1.8.0-openjdk-devel -y
-  wget -O /etc/yum.repos.d/jenkins.repo http://pkg.jenkins-ci.org/redhat/jenkins.repo
-  rpm --import https://jenkins-ci.org/redhat/jenkins-ci.org.key
-  yum install jenkins -y
-  systemctl enable jenkins.service
-  systemctl start jenkins.service
-
-  mkdir /app && cd /app
-  wget -c -N -q https://sonatype-download.global.ssl.fastly.net/nexus/oss/nexus-2.14.7-01-bundle.tar.gz
-  tar xvf nexus-2.14.7-01-bundle.tar.gz -C /app
-  ln -s /app/nexus-2.14.7-01/ /app/nexus
-  adduser nexus
-  chown -R nexus:nexus /app/nexus-2.14.7-01
-  chown -R nexus:nexus /app/sonatype-work
-  export NEXUS_HOME=/app/nexus 
-  echo 'RUN_AS_USER="nexus"' > /app/nexus/bin/nexus
-  ln -s /opt/nexus/bin/nexus /etc/init.d/nexus
-  systemctl enable nexus
-  systemctl start nexus
-  #8081/nexus
-  
-  cp /vagrant/mod_jk.so /etc/httpd/modules/
-  cp /vagrant/lb.conf /etc/httpd/conf.d/
-  
-  cp /vagrant/workers.template /etc/httpd/conf/workers.properties
-  cat /vagrant/worker_*.tmp >> /etc/httpd/conf/workers.properties
-  #rm /vagrant/worker*.tmp -f
-  
-  systemctl enable httpd
-  systemctl start httpd
-  systemctl restart httpd
-  
-  systemctl enable jenkins
-  systemctl start jenkins
-
-  #TODO:create rules
-  systemctl stop firewalld
-  systemctl disable firewalld
-SCRIPT
-
-
-
 Vagrant.configure("2") do |config|
   config.vm.box = "bertvv/centos72"
-  config.vm.provider "virtualbox" do |vb|
-    #vb.gui = true
-    vb.memory = 1024
+  #config.vm.network "public_network", bridge: "Default Switch"
+  config.vm.provider "virtualbox" do |h|
+    h.memory = 4096
+    #h.enable_virtualization_extensions = true
+    #h.differencing_disk = true
   end
+  node1 = 'grafana'
+  config.vm.define "#{node1}" do |n|
+    n.vm.hostname = "#{node1}"
 
-  (VM_COUNT-1).times do |i|
-    node_id = 'vm' + (i+1).to_s
-    node_ip = '192.168.56.' + (11 + i).to_s
-    config.vm.define node_id do |node|
-      node.vm.hostname = "#{node_id}"
-      node.vm.network :private_network, ip: "#{node_ip}", name: "VirtualBox Host-Only Ethernet Adapter"
-      node.vm.provision :shell, :inline => node_script, :args => "'#{node_id}' '#{node_ip}'"
+    n.vm.network "forwarded_port", guest: 3000, host: 3000
+    #config.vm.synced_folder ".", "/vagrant", type: "nfs", create: true
+    #config.vm.provision :shell, :inline => "echo '#{id_rsa_ssh_key_pub }' >> /home/vagrant/.ssh/authorized_keys"
+    n.vm.provision "shell", inline: <<-SHELL
+      systemctl stop firewalld
+      systemctl disable firewalld
+
+      yum install yum-utils -y  
+      yum install epel-release -y
+      yum install collectd -y
+      cat /vagrant/collectd.conf > /etc/collectd.conf
+      systemctl enable collectd
+      systemctl start collectd
+      #importing key or not
+      isInFile=$(cat .ssh/authorized_keys | grep "mykey")
+      if [ $isInFile -ne 0 ]; then
+        then
+          echo "Key already present"
+        else
+          ssh-keygen -C "mykey" -q -N "" -f /home/vagrant/id_rsa
+          cat id_rsa.pub >> /home/vagrant/.ssh/authorized_keys
+          cp id_rsa /vagrant/id_rsa_$hostname
+      fi
+      #docker
+      yum-config-manager \ --add-repo \ https://download.docker.com/linux/centos/docker-ce.repo
+      yum install docker-ce -y
+      systemctl enable docker
+      systemctl start docker
+      #grafana
+      docker run -d --name=grafana -p 3000:3000 grafana/grafana
+      #influx
+      cat /vagrant/influxdb.repo > /etc/yum.repos.d/influxdb.repo
+      yum install influxdb -y
+      cat /vagrant/influxdb.conf > /etc/influxdb/influxdb.conf
+      systemctl enable influxdb
+      systemctl start influxdb
+      #elastic
+      sysctl -w vm.max_map_count=262144
+
+      #docker run -p 9200:9200 -p 9300:9300 -e "" docker.elastic.co/elasticsearch/elasticsearch:6.2.2
+      #docker run --name elasticsearch -p 9200:9200 -p 9300:9300 -e "xpack.security.enabled=false" docker.elastic.co/elasticsearch/elasticsearch
+    SHELL
+    #n.vm.provision  :shell, :inline => influx_install
+  end
+  node2 = 'collectd'
+  config.vm.define "#{node2}" do |n|
+    n.vm.provider :virtualbox do |v|
+      v.customize ["modifyvm", :id, "--memory", "512"]
     end
-  end
-
-  config.vm.define LB_HOSTNAME do |node|
-    node.vm.hostname = LB_HOSTNAME
-    node.vm.network :private_network, ip: "192.168.56.10", name: "VirtualBox Host-Only Ethernet Adapter" #name parameter is due https://github.com/hashicorp/vagrant/issues/6059#issuecomment-126834560
-    node.vm.network "forwarded_port", guest: 80, host: 8000
-    node.vm.network "forwarded_port", guest: 8080, host: 8080
-    node.vm.network "forwarded_port", guest: 8081, host: 8081
-    node.vm.provision :shell, :inline => lb_script
+    n.vm.hostname = "#{node2}"
+    n.vm.provision "shell", inline: <<-SHELL
+      systemctl stop firewalld
+      systemctl disable firewalld
+      yum install epel-release -y
+      yum install collectd -y
+      cat /vagrant/collectd1.conf > /etc/collectd.conf
+      systemctl enable collectd
+      systemctl start collectd
+    SHELL
+    isInFile=$(cat .ssh/authorized_keys | grep "mykey")
+    if [ $isInFile -ne 0 ]; then
+      then
+        echo "Key already present"
+      else
+        ssh-keygen -C "mykey" -q -N "" -f /home/vagrant/id_rsa
+        cat id_rsa.pub >> /home/vagrant/.ssh/authorized_keys
+        cp id_rsa /vagrant/id_rsa_$hostname
+    fi
   end
 end
